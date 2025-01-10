@@ -17,7 +17,7 @@
 #include <inttypes.h>
 
 #ifdef _WIN32
-#include <Winbase.h>
+#include <windows.h>
 #endif
 
 bool FULoad(const char * const path, void ** const data, size_t * const length);
