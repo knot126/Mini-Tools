@@ -2,7 +2,8 @@
 
 Single header libraries for use in smaller projects.
 
-* **[`FileUtils.h`](FileUtils.h)** provides utilities for loading and saving whole files to/from memory.
+  * **[`FileUtils.h`](FileUtils.h)** provides utilities for loading and saving whole files to/from memory.
+  * **[`Hashtable.h`](Hashtable.h)** provides a basic data-to-data hash table.
 
 ## Licen(c|s)e
 

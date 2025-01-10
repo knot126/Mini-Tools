@@ -13,6 +13,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
+#include <inttypes.h>
 
 #ifdef _WIN32
 #include <Winbase.h>
@@ -21,7 +23,7 @@
 bool FULoad(const char * const path, void ** const data, size_t * const length);
 char *FULoadString(const char *path);
 
-bool FUSave(const char * const restrict path, void *data, size_t length);
+bool FUSave(const char * const restrict path, const void * const data, const size_t length);
 bool FUSaveString(const char * const restrict path, const char *string);
 
 bool FUIsFile(const char * const restrict path);
@@ -95,7 +97,7 @@ bool FULoad(const char * const restrict path, void ** const data, size_t * const
 	
 	// Yay, we did it!
 	if (length) {
-		buffer[file_length] = '\0';
+		((uint8_t *) buffer)[file_length] = '\0';
 		*length = file_length;
 	}
 	
@@ -122,7 +124,7 @@ char *FULoadString(const char * const restrict path) {
 
 #define RET_ERROR() if (file) { fclose(file); remove(temp_path); } return false;
 
-bool FUSave(const char * const restrict path, void *data, size_t length) {
+bool FUSave(const char * const restrict path, const void * const data, const size_t length) {
 	/**
 	 * Saves the length bytes at data to a file. The data is first written to
 	 * the given path with ".new" appended to it, then rename()'d over the old
