@@ -159,7 +159,7 @@ bool FUSave(const char * const restrict path, const void * const data, const siz
 #ifndef _WIN32
 	if (rename(temp_path, path)) {
 #else
-	if (!ReplaceFileA(temp_path, path, NULL, 0, NULL, NULL)) {
+	if (!ReplaceFileA(path, temp_path, NULL, REPLACEFILE_IGNORE_MERGE_ERRORS, NULL, NULL)) {
 #endif
 		remove(temp_path);
 		return false;
