@@ -6,6 +6,6 @@ Single header libraries for use in smaller projects.
 
 ## Licen(c|s)e
 
-The licence is the MIT licence with the following additional restriction:
+The licence is the MIT licence.
 
-  * Users of the software must not identify by the handle "alex343xd" online.
+Other than this, please only use this Software for Good, and never for Evil.
