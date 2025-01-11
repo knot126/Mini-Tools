@@ -97,8 +97,10 @@ bool FULoad(const char * const restrict path, void ** const data, size_t * const
 	
 	// Yay, we did it!
 	if (length) {
-		((uint8_t *) buffer)[file_length] = '\0';
 		*length = file_length;
+	}
+	else {
+		((uint8_t *) buffer)[file_length] = '\0';
 	}
 	
 	*data = buffer;
