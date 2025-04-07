@@ -3,8 +3,8 @@
  * mixed type of nibble-based integer encoding.
  */
 
-#ifndef _MTF_IX_H
-#define _MTF_IX_H
+#ifndef _MI_H
+#define _MI_H
 
 #include <inttypes.h>
 #include <string.h>
@@ -12,18 +12,20 @@
 
 typedef size_t (*MIIoFunc)(void *context, void *buffer, size_t length);
 
-bool MICompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write);
-bool MIDecompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write);
+const char *MICompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write);
+const char *MIDecompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write);
 
 #ifndef MI_NO_STDIO
 #include <stdio.h>
-bool MICompressStream(FILE *input, FILE *output);
-bool MIDecompressStream(FILE *input, FILE *output);
+const char *MICompressStream(FILE *input, FILE *output);
+const char *MIDecompressStream(FILE *input, FILE *output);
 #endif
 
 #endif
 
 #ifdef MI_IMPLEMENTATION
+
+#define MI_NO_ERROR (MIErrorInfo){.success = true}
 
 #define MI_BUFFER_SIZE 2048
 
@@ -185,9 +187,9 @@ static char MIMtfChForIndex(MIMtf *mtf, uint8_t i) {
 	return ch;
 }
 
-#define MI_CHECKED_WRITE(CH) if (!MIWriteHd(output, CH)) { return false; }
+#define MI_CHECKED_WRITE(CH) if (!MIWriteHd(output, CH)) { return "Write error"; }
 
-static bool MICompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output) {
+static const char *MICompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output) {
 	MIMtf mtf;
 	
 	MIMtfInit(&mtf);
@@ -228,14 +230,18 @@ static bool MICompressUsingInternalStreams(MIReadStream *input, MIWriteStream *o
 	MI_CHECKED_WRITE(0b1111);
 	MI_CHECKED_WRITE(0b0011);
 	
-	return MIFlush(output);
+	if (!MIFlush(output)) {
+		return "Write error";
+	}
+	
+	return NULL;
 }
 
 #undef MI_CHECKED_WRITE
 
-#define MI_CHECKED_WRITE(CH) if (!MIWriteCh(output, CH)) { return false; }
+#define MI_CHECKED_WRITE(CH) if (!MIWriteCh(output, CH)) { return "Write error"; }
 
-static bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output) {
+static const char *MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output) {
 	MIMtf mtf;
 	
 	MIMtfInit(&mtf);
@@ -244,7 +250,7 @@ static bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream 
 		char i;
 		
 		if (!MIReadHd(input, &i)) {
-			return false;
+			return "Read error";
 		}
 		
 		if (i != 15) {
@@ -260,13 +266,13 @@ static bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream 
 			for (size_t j = 0;; j++) {
 				// Valid numbers can't realistically be more than 3 nibbles.
 				if (j > 2) {
-					return false;
+					return "Number is too long";
 				}
 				
 				char tmp;
 				
 				if (!MIReadHd(input, &tmp)) {
-					return false;
+					return "Read error";
 				}
 				
 				// Decode bits of byte
@@ -293,18 +299,22 @@ static bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream 
 		}
 	}
 	
-	return MIFlush(output);
+	if (!MIFlush(output)) {
+		return "Write error";
+	}
+	
+	return NULL;
 }
 
 #undef MI_CHECKED_WRITE
 
-bool MICompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write) {
+const char *MICompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write) {
 	MIReadStream input; MIReadStreamInit(&input, input_ctx, read);
 	MIWriteStream output; MIWriteStreamInit(&output, output_ctx, write);
 	return MICompressUsingInternalStreams(&input, &output);
 }
 
-bool MIDecompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write) {
+const char *MIDecompress(void *input_ctx, MIIoFunc read, void *output_ctx, MIIoFunc write) {
 	MIReadStream input; MIReadStreamInit(&input, input_ctx, read);
 	MIWriteStream output; MIWriteStreamInit(&output, output_ctx, write);
 	return MIDecompressUsingInternalStreams(&input, &output);
@@ -325,15 +335,97 @@ static size_t MIStdioWrite(void *f, void *buf, size_t size) {
 	return fwrite(buf, 1, size, (FILE *) f);
 }
 
-bool MICompressStream(FILE *input, FILE *output) {
+const char *MICompressStream(FILE *input, FILE *output) {
 	return MICompress(input, MIStdioRead, output, MIStdioWrite);
 }
 
-bool MIDecompressStream(FILE *input, FILE *output) {
+const char *MIDecompressStream(FILE *input, FILE *output) {
 	return MIDecompress(input, MIStdioRead, output, MIStdioWrite);
 }
 
 #endif
+
+#ifdef MI_COMPILE_MAIN
+
+#ifdef MI_NO_STDIO
+#error Cannot compile Mi main() with stdio not enabled.
+#endif
+
+void print_help(void) {
+	fprintf(stderr, "Mi compression utility\n\nmi [args ...] <input> <output>\n\n\t-d, -D, --decompress: Enable decompress mode.\n\n");
+}
+
+int main(int argc, char *argv[]) {
+	bool decompress = false;
+	
+	if (argc < 3) {
+		fprintf(stderr, "Not enough arguments\n\n");
+		print_help();
+		return 1;
+	}
+	
+	// Parse command line arguments
+	for (size_t i = 1; i < argc - 2; i++) {
+		if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "-D") || !strcmp(argv[i], "--decompress")) {
+			decompress = true;
+		}
+		else {
+			fprintf(stderr, "Unrecognised argument: %s\n\n", argv[0]);
+			print_help();
+			return 1;
+		}
+	}
+	
+	// Open input file
+	bool using_stdin = !strcmp(argv[argc - 2], "-");
+	FILE *input = using_stdin ? stdin : fopen(argv[argc - 2], "rb");
+	
+	if (!input) {
+		fprintf(stderr, "Failed to open input stream\n");
+		return 2;
+	}
+	
+	// Open output file
+	bool using_stdout = !strcmp(argv[argc - 1], "-");
+	FILE *output = using_stdout ? stdout : fopen(argv[argc - 1], "wb");
+	
+	if (!output) {
+		fprintf(stderr, "Failed to open output stream\n");
+		return 2;
+	}
+	
+	// Decompress
+	if (decompress) {
+		const char *error = MIDecompressStream(input, output);
+		
+		if (error) {
+			fprintf(stderr, "Decompression failed: %s\n", error);
+			return 3;
+		}
+	}
+	// Compress
+	else {
+		const char *error = MICompressStream(input, output);
+		
+		if (error) {
+			fprintf(stderr, "Compression failed: %s\n", error);
+			return 3;
+		}
+	}
+	
+	// Close files (if not using stdin/stdout)
+	if (!using_stdin) {
+		fclose(input);
+	}
+	
+	if (!using_stdout) {
+		fclose(output);
+	}
+	
+	return 0;
+}
+#endif
+
 
 #undef MI_IMPLEMENTATION
 #endif
