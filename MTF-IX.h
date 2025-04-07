@@ -201,12 +201,8 @@ bool MICompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output) 
 			break;
 		}
 		
-		// printf("Read char: %c\n", ch);
-		
 		// Get mtf index
 		uint8_t i = MIMtfIndexForCh(&mtf, ch);
-		
-		printf("Writing Index %d (%08b) for %c\n", i, i, ch);
 		
 		// Is less than 15? We can just use one hexdigit then
 		if (i < 15) {
@@ -227,11 +223,11 @@ bool MICompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output) 
 		}
 	}
 	
-	// End of message (encoded symbol is > 240)
+	// End of message (where raw index is > 240)
 	MI_CHECKED_WRITE(0b1111);
-	MI_CHECKED_WRITE(0b1000);
-	MI_CHECKED_WRITE(0b1110);
-	MI_CHECKED_WRITE(0b0100);
+	MI_CHECKED_WRITE(0b1111);
+	MI_CHECKED_WRITE(0b1111);
+	MI_CHECKED_WRITE(0b0011);
 	
 	return MIFlush(output);
 }
@@ -249,36 +245,30 @@ bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output
 		char i;
 		
 		if (!MIReadHd(input, &i)) {
-			printf("initial read failure\n");
-			// return false;
-			break;
+			return false;
 		}
 		
 		if (i != 15) {
 			// Common indicies
 			char ch = MIMtfChForIndex(&mtf, i);
-			printf("[S] Write char %c (0x%02x)\n", ch, ch);
 			MI_CHECKED_WRITE(ch);
 		}
 		else {
+			// We need this to be zeroed first, lest we have Big Problems!
 			i = 0;
 			
 			// Read LEB8 integer
 			for (size_t j = 0;; j++) {
 				// Valid numbers can't realistically be more than 3 nibbles.
 				if (j > 2) {
-					printf("j > 2\n");
 					return false;
 				}
 				
 				char tmp;
 				
 				if (!MIReadHd(input, &tmp)) {
-					printf("leb8 read fail\n");
 					return false;
 				}
-				
-				// printf("tmp = %04b\n", tmp);
 				
 				// Decode bits of byte
 				i |= (tmp & 0x7) << (3 * j);
@@ -289,8 +279,6 @@ bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output
 				}
 			}
 			
-			printf("  prefi index = %d (%08b) \n", i, i);
-			
 			// An extended symbol that has a value > 240 wouldn't have a valid
 			// index (255 - 15 = 240) and is instead used to indicate the end of
 			// the message.
@@ -300,11 +288,8 @@ bool MIDecompressUsingInternalStreams(MIReadStream *input, MIWriteStream *output
 			
 			i += 15;
 			
-			printf("  final index = %d (%08b) \n", i, i);
-			
 			// Finally
 			char ch = MIMtfChForIndex(&mtf, i);
-			printf("[P] Write char %c (0x%02x)\n", ch, ch);
 			MI_CHECKED_WRITE(ch);
 		}
 	}
