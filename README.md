@@ -4,6 +4,7 @@ Single header libraries for use in smaller projects.
 
   * **[`FileUtils.h`](FileUtils.h)** provides utilities for loading and saving whole files to/from memory.
   * **[`Hashtable.h`](Hashtable.h)** provides a basic data-to-data hash table.
+  * **[`Mi.h`](Mi.h)** provides a simple text compression library made as a proof of concept.
 
 ## Licen(c|s)e
 

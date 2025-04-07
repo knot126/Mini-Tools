@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 #define MI_IMPLEMENTATION
-#include "../MTF-IX.h"
+#include "../Mi.h"
 
 int main(int argc, char *argv[]) {
 	if (argc < 4) {
