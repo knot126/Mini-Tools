@@ -27,7 +27,7 @@ const char *MIDecompressStream(FILE *input, FILE *output);
 
 #define MI_NO_ERROR (MIErrorInfo){.success = true}
 
-#define MI_BUFFER_SIZE 2048
+#define MI_BUFFER_SIZE 16384
 
 typedef struct MIWriteStream {
 	void *context;
