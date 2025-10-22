@@ -28,62 +28,46 @@ const char *KPGetWithFallback(KPProperties *self, const char *target_key, const 
 
 #ifdef KNOT_PROPERTIES_IMPLEMENTATION
 
-#ifndef KP_MALLOC
-#include <stdlib.h>
-#define KP_MALLOC(x) malloc(x)
-#endif
-
-#ifndef KP_FREE
-#include <stdlib.h>
-#define KP_FREE(x) free(x)
-#endif
-
 #define KP_NEWLINE "\r\n"
 #define KP_WHITESPACE " \t\v\f"
 #define KP_SEP ":="
 
-#define KP_SBSIZE 4096
-
 #include <string.h>
+#include <stdlib.h>
 
 typedef struct KPProperties {
-	short count;
-	int sb_size;
 	int sb_last;
+	short count;
 	char bank[];
 } KPProperties;
 
 #define KP_FIND_IN_SET(STR, SET) (strpbrk(STR, SET) ? strpbrk(STR, SET) : ((STR) + strlen(STR)))
 
-#define KP_WRITE_STRING(STR, LEN) {\
-	while (props->sb_last + ((LEN)+1) > props->sb_size) {\
-		KPProperties *new_props = malloc(sizeof *new_props + 2 * props->sb_size);\
-		\
-		if (!new_props) {\
-			free(props);\
-			return NULL;\
-		}\
-		\
-		memcpy(new_props, props, sizeof *props + props->sb_size);\
-		free(props);\
-		props = new_props;\
-		props->sb_size *= 2;\
-	}\
-	\
+#define KP_WRITE_STRING(STR, LEN) \
 	memcpy(props->bank + props->sb_last, STR, LEN);\
 	props->bank[props->sb_last + (LEN)] = '\0';\
-	props->sb_last += (LEN) + 1;\
+	props->sb_last += (LEN) + 1;
+
+static inline size_t KPUpperSizeBound(const char *content) {
+	size_t size = strlen(content);
+	
+	while (*(content++) != '\0') {
+		if (*content == '\r' || *content == '\n') {
+			size += 1;
+		}
+	}
+	
+	return size;
 }
 
 KPProperties *KPParse(const char * const content) {
-	KPProperties *props = malloc(sizeof *props + KP_SBSIZE);
+	KPProperties *props = malloc(sizeof *props + KPUpperSizeBound(content));
 	
 	if (!props) {
 		return NULL;
 	}
 	
 	props->count = 0;
-	props->sb_size = KP_SBSIZE;
 	props->sb_last = 0;
 	
 	const char *line = content;
