@@ -3,7 +3,7 @@
 #define KNOT_PROPERTIES_IMPLEMENTATION
 #include "../Properties.h"
 
-const char * const gProps = "first=1\n second=2 \nthird=3\rfourth = four!\r\nfifth the fifth entry :3\r\n\n\n Woah, that's so many spaces!\n";
+const char * const gProps = "first=1\n second=2 \nthird=3\rfourth = four!\r\nfifth the fifth entry :3\r\n\n\n Woah, that's so many spaces!\ntest\n";
 
 int main(int argc, char *argv[]) {
 	KPProperties *props = KPParse(gProps);
@@ -18,6 +18,7 @@ int main(int argc, char *argv[]) {
 	printf("fifth value: '%s'\n", KPGet(props, "fifth"));
 	printf("Woah, value: '%s'\n", KPGet(props, "Woah,"));
 	printf("Bad! value: '%s'\n", KPGet(props, "Bad!"));
+	printf("test value: '%s'\n", KPGet(props, "test"));
 	
 	free(props);
 	
