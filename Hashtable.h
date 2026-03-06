@@ -1,5 +1,7 @@
 /**
- * Knot's Blob-to-Blob Hash Table - Copyright (C) 2024 Knot126, Zlib License
+ * Knot's Blob-to-Blob Hash Table 1.1
+ * Copyright (C) 2024 - 2026 Knot126
+ * Licensed under the Zlib License
  * 
  * This single-header library implements a basic hash table which can map
  * arbitrary blobs of data to other arbitrary blobs of data. 'Blob' basically
@@ -14,6 +16,9 @@
  *   - Common case O(1) insert, update, retrieve, and member check
  *   - O(n) delete (makes deleting keys less complex with order-preserving)
  *   - Only supports power-of-two capacity sizes ATM
+ * 
+ * Documentation
+ * -------------
  * 
  * Some general usage notes:
  * 
@@ -125,6 +130,21 @@
  *     Return the value for the i-th key-value pair in the dictionary, or NULL
  *     if it would be out of bounds.
  * 
+ * Custom allocators:
+ * 
+ *   - You can use a custom allocator by defining the KH_MALLOC and KH_FREE
+ *     macros. They are expected to act exactly like a call to malloc() or
+ *     free().
+ * 
+ * Changelog
+ * ---------
+ * 
+ * 2026-03-06: v1.1
+ * 
+ *   - Custom allocators can be used by defining KH_MALLOC(s) and KH_FREE(b).
+ *   - We now check for NULL from the allocator in KH_CreateDict(). (yikes!)
+ *   - Made internal deallocation of blobs less suspicous (free -> KH_ReleaseBlob)
+ * 
  * Zlib License
  * ------------
  * 
@@ -165,7 +185,7 @@ typedef uint32_t kh_hash_t;
 typedef struct KH_Blob {
 	size_t length;
 	kh_hash_t hash;
-	const uint8_t data[0];
+	uint8_t data[];
 } KH_Blob;
 
 typedef uint32_t KH_Slot;
@@ -196,7 +216,23 @@ KH_Blob *KH_DictKeyIter(KH_Dict *self, size_t index);
 KH_Blob *KH_DictValueIter(KH_Dict *self, size_t index);
 size_t KH_DictLen(KH_Dict *self);
 
+#ifdef KH_WANT_HELPERS
+#define KH_DictSetStr(dict, key, value) KH_DictSet(dict, KH_BlobForString(key), KH_BlobForString(value))
+#define KH_DictGetStr(dict, key) KH_DictGet(dict, KH_BlobForString(key))
+#define KH_DictHasStr(dict, key) KH_DictHas(dict, KH_BlobForString(key))
+#define KH_DictDeleteStr(dict, key) KH_DictDelete(dict, KH_BlobForString(key))
+#endif
+
 #ifdef KHASHTABLE_IMPLEMENTATION
+
+#ifndef KH_MALLOC
+#define KH_MALLOC(SIZE) malloc(SIZE)
+#endif
+
+#ifndef KH_FREE
+#define KH_FREE(BLOCK) free(BLOCK)
+#endif
+
 static kh_hash_t KH_Hash(const uint8_t *buffer, const size_t length) {
 	kh_hash_t hash = 5381;
 	
@@ -208,7 +244,7 @@ static kh_hash_t KH_Hash(const uint8_t *buffer, const size_t length) {
 }
 
 KH_Blob *KH_CreateBlob(const uint8_t *buffer, const size_t length) {
-	KH_Blob *blob = malloc(sizeof *blob + length);
+	KH_Blob *blob = KH_MALLOC(sizeof *blob + length);
 	
 	if (!blob) {
 		return NULL;
@@ -216,7 +252,7 @@ KH_Blob *KH_CreateBlob(const uint8_t *buffer, const size_t length) {
 	
 	blob->length = length;
 	blob->hash = KH_Hash(buffer, length);
-	memcpy((void *) blob->data, buffer, length);
+	memcpy(&blob->data, buffer, length);
 	
 	return blob;
 }
@@ -238,10 +274,10 @@ static bool KH_BlobEqual(KH_Blob *blob1, KH_Blob *blob2) {
 }
 
 void KH_ReleaseBlob(KH_Blob *blob) {
-	free(blob);
+	KH_FREE(blob);
 }
 
-static uint32_t KH_BlobStartingIndexForSize(uint32_t hash, size_t size) {
+inline static uint32_t KH_BlobStartingIndexForSize(uint32_t hash, size_t size) {
 	// WARNING: Only works for powers of two
 	return hash & (size - 1);
 }
@@ -267,13 +303,19 @@ static KH_Dict *KH_ResizeDict(KH_Dict *self) {
 	// New size of the prealloced memory and index data
 	size_t new_size = (self->data_alloced) ? (2 * self->data_alloced) : (8);
 	
+	// I am thinking of switch to this:
+	// new size = floor(1.25 * old size)
+	// forms the sequence 8, 10, 12, 15, 18, 20, 25, 31 ...
+	// size_t new_size = (self->data_alloced) ? (self->data_alloced + (self->data_alloced >> 2)) : (8);
+	// I don't know if it grows fast enough to be a good idea though; maybe 1.5?
+	
 	// Alloc new slots and pair data
-	KH_Slot *new_slots = malloc(sizeof *self->slots * new_size);
-	KH_DictPair *new_pairs = malloc(sizeof *self->pairs * new_size);
+	KH_Slot *new_slots = KH_MALLOC(sizeof *self->slots * new_size);
+	KH_DictPair *new_pairs = KH_MALLOC(sizeof *self->pairs * new_size);
 	
 	if (!new_slots || !new_pairs) {
-		free(new_slots);
-		free(new_pairs);
+		KH_FREE(new_slots);
+		KH_FREE(new_pairs);
 		return NULL;
 	}
 	
@@ -304,8 +346,8 @@ static KH_Dict *KH_ResizeDict(KH_Dict *self) {
 	// j is now the new data_count
 	
 	// We should be ready to free old stuff, place new stuff
-	free(self->slots);
-	free(self->pairs);
+	KH_FREE(self->slots);
+	KH_FREE(self->pairs);
 	self->slots = new_slots;
 	self->pairs = new_pairs;
 	self->data_alloced = new_size;
@@ -345,7 +387,7 @@ static void KH_DictChange(KH_Dict *self, size_t index, KH_Blob *value) {
 	 * key.
 	 */
 	
-	free(self->pairs[index].value);
+	KH_ReleaseBlob(self->pairs[index].value);
 	self->pairs[index].value = value;
 }
 
@@ -386,11 +428,15 @@ static size_t KH_DictLookupIndex(KH_Dict *self, KH_Blob *key) {
 static void KH_DictRemove(KH_Dict *self, size_t index) {
 	/**
 	 * Deletes the value at the given index, and updates the slots as needed.
+	 * 
+	 * TODO: We should use the partial re-evaluation trick here so we can
+	 * eliminate the need for DELETED entries, which will simplify a lot of
+	 * other code.
 	 */
 	
-	// Free key and value, they arent needed anymore
-	free(self->pairs[index].key);
-	free(self->pairs[index].value);
+	// Free key and value, they aren't needed anymore
+	KH_ReleaseBlob(self->pairs[index].key);
+	KH_ReleaseBlob(self->pairs[index].value);
 	
 	// Move pairs to lower indexes
 	// memmove(&self->pairs[index], &self->pairs[index + 1], (size_t)&self->pairs[index + 1] - (size_t)&self->pairs[self->data_count]);
@@ -424,22 +470,28 @@ static void KH_DictRemove(KH_Dict *self, size_t index) {
 }
 
 KH_Dict *KH_CreateDict(void) {
-	KH_Dict *dict = malloc(sizeof *dict);
-	memset(dict, 0, sizeof *dict);
-	return dict;
+	KH_Dict *dict = KH_MALLOC(sizeof *dict);
+	
+	if (!dict) {
+		return NULL;
+	}
+	else {
+		memset(dict, 0, sizeof *dict);
+		return dict;
+	}
 }
 
 void KH_ReleaseDict(KH_Dict *dict) {
-	free(dict->slots);
+	KH_FREE(dict->slots);
 	
 	for (size_t i = 0; i < dict->data_count; i++) {
-		free(dict->pairs[i].key);
-		free(dict->pairs[i].value);
+		KH_ReleaseBlob(dict->pairs[i].key);
+		KH_ReleaseBlob(dict->pairs[i].value);
 	}
 	
-	free(dict->pairs);
+	KH_FREE(dict->pairs);
 	
-	free(dict);
+	KH_FREE(dict);
 }
 
 bool KH_DictSet(KH_Dict *self, KH_Blob *key, KH_Blob *value) {
@@ -455,7 +507,7 @@ bool KH_DictSet(KH_Dict *self, KH_Blob *key, KH_Blob *value) {
 	}
 	else {
 		KH_DictChange(self, index, value);
-		free(key);
+		KH_ReleaseBlob(key);
 		return true;
 	}
 }
@@ -467,7 +519,7 @@ KH_Blob *KH_DictGet(KH_Dict *self, KH_Blob *key) {
 	
 	size_t index = KH_DictLookupIndex(self, key);
 	
-	free(key);
+	KH_ReleaseBlob(key);
 	
 	if (index == KH_NOT_FOUND) {
 		return NULL;
@@ -483,7 +535,7 @@ bool KH_DictHas(KH_Dict *self, KH_Blob *key) {
 	 */
 	
 	size_t index = KH_DictLookupIndex(self, key);
-	free(key);
+	KH_ReleaseBlob(key);
 	return index != KH_NOT_FOUND;
 }
 
@@ -495,12 +547,12 @@ bool KH_DictDelete(KH_Dict *self, KH_Blob *key) {
 	size_t index = KH_DictLookupIndex(self, key);
 	
 	if (index == KH_NOT_FOUND) {
-		free(key);
+		KH_ReleaseBlob(key);
 		return false;
 	}
 	else {
 		KH_DictRemove(self, index);
-		free(key);
+		KH_ReleaseBlob(key);
 		return true;
 	}
 }
